@@ -11,14 +11,15 @@ namespace OptimalCutWork
         static void Main(string[] args)
         {
             ProductBatch[] batches = new ProductBatch[] {
-                new ProductBatch("b1",DateTime.Now, 10, 10, 30),
-                new ProductBatch("b2",DateTime.Now, 10, 20, 30),
+                new ProductBatch("b1",DateTime.Now, 10, 10, 30, new Dictionary<string,int>(){ { "q", 1 } }, 1),
+                new ProductBatch("b2",DateTime.Now.AddDays(1), 10, 20, 30, new Dictionary<string,int>(){ { "qa", 1 } }, 1),
+                new ProductBatch("b3",DateTime.Now.AddDays(2), 10, 20, 30, new Dictionary<string,int>(){ { "", 1 } }, 1),
             };
             Workcenter[] workcenters = new Workcenter[] {
-                new Workcenter("w1"){ maximalDiameter=20, },
-                new Workcenter("w2"){ maximalDiameter=20, },
+                new Workcenter("w1"){ maximalDiameter=20, seconds = 20 },
+                //new Workcenter("w2"){ maximalDiameter=20, },
             };
-            BatchWorkcenter[] batchWorkcenters = GetBatchWorkcenters(batches, workcenters);
+            BatchWorkcenter[] batchWorkcenters = GetBatchWorkcenters(batches, workcenters, 8 * 60 * 60);
             foreach (var bw in batchWorkcenters)
             {
                 Console.WriteLine("{0}", bw);
@@ -27,35 +28,59 @@ namespace OptimalCutWork
             Console.ReadLine();
         }
 
-        public static BatchWorkcenter[] GetBatchWorkcenters(ProductBatch[] batches, Workcenter[] workcenters)
+        public static BatchWorkcenter[] GetBatchWorkcenters(ProductBatch[] batches, Workcenter[] workcenters, int forFirstLevelLimitSeconds)
         {
             List<BatchWorkcenter> batchWorkcenters = new List<BatchWorkcenter>();
-            foreach (var batch in batches.OrderBy(b => b.availabilityLevel).ThenBy(b => b.deadline))
+            //foreach (var batch in batches.Where(b => b.availabilityLevel == 1).OrderBy(b => b.deadline))
             {
-                var availableWorkcenters = workcenters
-                    .Where(w => w.materialBatches != null && batch.materialBatches != null && batch.materialBatches.Intersect(w.materialBatches).Any());
-                //{
-                //    workcenter.seconds += batch.seconds;
-                //    batchWorkcenters.Add(new BatchWorkcenter { batch = batch, workcenter = workcenter, startSecond = workcenter.seconds });
-                //    batch.workcenter = workcenter;
-                //    break;
-                //}
-                //if (batch.workcenter != null) continue;
-                if (!availableWorkcenters.Any())
+                int sumSeconds = workcenters.Sum(w => w.seconds);
+                var availableBatches = batches.Where(b => b.availabilityLevel == 1).ToList();
+                ProductBatch batch = null;
+                while (true)
                 {
-                    availableWorkcenters = workcenters
-                        .Where(w => w.minimalDiameter <= batch.diameter && w.maximalDiameter >= batch.diameter && batch.billetLength <= w.maximalLenght);
-                }
-                foreach (Workcenter workcenter in availableWorkcenters.OrderBy(w => w.seconds))
-                {
-                    int startSecond = workcenter.seconds;
-                    workcenter.seconds += batch.seconds;
-                    batchWorkcenters.Add(new BatchWorkcenter { batch = batch, workcenter = workcenter, startSecond = startSecond });
-                    batch.workcenter = workcenter;
-                    break;
+                    if (batch == null)
+                    {
+                        if (sumSeconds > forFirstLevelLimitSeconds) break;
+                        batch = availableBatches
+                            .OrderBy(b => b.deadline).FirstOrDefault();
+                        if (batch == null) break;
+                    }
+                    ScheduleBatch(workcenters, batchWorkcenters, batch);
+
+                    sumSeconds += batch.seconds;
+
+                    availableBatches.Remove(batch);
+                    batch = availableBatches
+                        .Where(b => (b.deadline - batch.deadline).TotalDays < 3 && b.materialBatches.Intersect(batch.materialBatches).Any())
+                        .OrderBy(b => b.deadline).FirstOrDefault();
                 }
             }
+            foreach (var batch in batches.Where(b => b.workcenter == null).OrderBy(b => b.deadline))
+            {
+                ScheduleBatch(workcenters, batchWorkcenters, batch);
+            }
             return batchWorkcenters.ToArray();
+        }
+
+        private static void ScheduleBatch(Workcenter[] workcenters, List<BatchWorkcenter> batchWorkcenters, ProductBatch batch)
+        {
+            // check if matBatch on workcenter
+            var availableWorkcenters = workcenters
+                .Where(w => batch.materialBatches.Keys.Intersect(w.materialBatches).Any());
+            if (!availableWorkcenters.Any())
+            {
+                availableWorkcenters = workcenters
+                    .Where(w => w.minimalDiameter <= batch.diameter && w.maximalDiameter >= batch.diameter && batch.billetLength <= w.maximalLenght);
+            }
+            foreach (Workcenter workcenter in availableWorkcenters.OrderBy(w => w.seconds))
+            {
+                int startSecond = workcenter.seconds;
+                workcenter.seconds += batch.seconds;
+                batchWorkcenters.Add(new BatchWorkcenter { batch = batch, workcenter = workcenter, startSecond = startSecond });
+                batch.workcenter = workcenter;
+                workcenter.materialBatches.AddRange(batch.materialBatches.Keys);
+                break;
+            }
         }
 
         public struct BatchWorkcenter
@@ -78,10 +103,10 @@ namespace OptimalCutWork
             public int diameter;
             public int billetLength;
             public int availabilityLevel;
-            public string[] materialBatches;
+            public Dictionary<string, int> materialBatches;
             public Workcenter workcenter;
 
-            public ProductBatch(string id, DateTime deadline, int seconds, int diameter, int billetLength, int availabilityLevel = 0, string[] materialBatches = null)
+            public ProductBatch(string id, DateTime deadline, int seconds, int diameter, int billetLength, Dictionary<string, int> materialBatches, int availabilityLevel = 0)
             {
                 this.deadline = deadline;
                 this.seconds = seconds;
@@ -93,6 +118,13 @@ namespace OptimalCutWork
             }
         }
 
+        public struct Task
+        {
+            public string materialBatchId;
+            public ProductBatch productBatch;
+            public int quantity;
+        }
+
         public class Workcenter
         {
             public string id;
@@ -100,7 +132,7 @@ namespace OptimalCutWork
             public int minimalDiameter = int.MinValue;
             public int maximalLenght = int.MaxValue;
             public int seconds = 0;
-            public string[] materialBatches;
+            public List<string> materialBatches = new List<string>();
 
             public Workcenter(string id)
             {
