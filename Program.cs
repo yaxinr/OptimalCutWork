@@ -36,7 +36,7 @@ namespace OptimalCutWork
             {
                 id = g.Key,
                 deadline = new DateTime(Math.Max(g.Min(x => x.productBatch.deadline).Ticks, DateTime.Today.Ticks)),
-                batchLinks = g.ToArray()
+                batchLinks = g.OrderBy(bl => bl.productBatch.deadline).ToArray()
             });
 
             if (tasks == null) tasks = new List<Task>();
@@ -74,6 +74,10 @@ namespace OptimalCutWork
             {
                 availableWorkcenters = workcenters
                     .Where(w => w.minimalDiameter <= productBatch.diameter && w.maximalDiameter >= productBatch.diameter && productBatch.billetLength <= w.maximalLenght);
+                if (!availableWorkcenters.Any())
+                {
+                    availableWorkcenters = workcenters;
+                }
             }
             foreach (Workcenter workcenter in availableWorkcenters.OrderBy(w => w.seconds))
             {
