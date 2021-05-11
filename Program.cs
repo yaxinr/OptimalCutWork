@@ -35,7 +35,8 @@ namespace OptimalCutWork
             var matBatches = batchLinks.GroupBy(x => x.materialBatchId).Select(g => new MaterialBatch()
             {
                 id = g.Key,
-                deadline = new DateTime(Math.Max(g.Min(x => x.productBatch.deadline).Ticks, DateTime.Today.Ticks)),
+                //deadline = new DateTime(Math.Max(g.Min(x => x.productBatch.deadline).Ticks, DateTime.Today.Ticks)),
+                deadline = g.Min(x => x.productBatch.deadline),
                 batchLinks = g.OrderBy(bl => bl.productBatch.deadline).ToArray()
             });
 
