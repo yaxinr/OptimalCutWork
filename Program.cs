@@ -2,7 +2,6 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Text;
 using System.Threading.Tasks;
 
 namespace OptimalCutWork
@@ -17,11 +16,14 @@ namespace OptimalCutWork
                 new ProductBatch("b3", 10, DateTime.Now.AddDays(2), 20, 30, 1),
             };
             Workcenter[] workcenters = new Workcenter[] {
-                new Workcenter("w1"){ maximalDiameter=20, seconds = 20 },
-                //new Workcenter("w2"){ maximalDiameter=20, },
+                //new Workcenter("w1"){ maximalDiameter=20, seconds = 20 },
+                new Workcenter("w2"){ maximalDiameter=20, },
             };
-            BatchLink[] batchLinks = new BatchLink[] { new BatchLink() { materialBatchId = "q", placeId = 99, productBatch = batches[0], quantity = 1 } };
-            Task[] batchWorkcenters = ScheduleTask(batchLinks, workcenters, 8 * 60 * 60, DateTime.Today.AddDays(17));
+            BatchLink[] batchLinks = new BatchLink[] {
+                new BatchLink() { materialBatchId = "q", placeId = 99, productBatch = batches[1], quantity = 1, materialBatchIncomeAt = DateTime.Now },
+                new BatchLink() { materialBatchId = "w", placeId = 99, productBatch = batches[0], quantity = 1, materialBatchIncomeAt = DateTime.Now.AddDays(1) },
+            };
+            Task[] batchWorkcenters = ScheduleTask(batchLinks, workcenters, 8 * 60 * 60, DateTime.Today.AddDays(14));
             foreach (var bw in batchWorkcenters)
             {
                 Console.WriteLine("{0}", bw);
@@ -31,6 +33,36 @@ namespace OptimalCutWork
         }
 
         public static Task[] ScheduleTask(BatchLink[] batchLinks, Workcenter[] workcenters, int forFirstLevelLimitSeconds, DateTime deadlineLimit, List<Task> tasks = null)
+        {
+            if (tasks == null) tasks = new List<Task>();
+            int sumSeconds = workcenters.Sum(w => w.seconds);
+            var prodBatches = batchLinks.Where(bl => bl.productBatch.deadline < deadlineLimit).GroupBy(x => x.productBatch);
+            Parallel.ForEach(prodBatches, b =>
+            {
+                b.Key.materialBatchIncomeAt = b.Min(bl => bl.materialBatchIncomeAt);
+            });
+            var orderedProductBatches = prodBatches
+                .OrderBy(x => x.Key.materialBatchIncomeAt)
+                .ThenBy(x => x.Key.deadline).ToArray();
+            foreach (var pb in orderedProductBatches.Where(x => x.Key.availabilityLevel == 1))
+            {
+                foreach (var bl in pb.OrderBy(bl => bl.materialBatchIncomeAt))
+                {
+                    sumSeconds += ScheduleBatchLink(workcenters, tasks, bl);
+                }
+                if (sumSeconds > forFirstLevelLimitSeconds) break;
+            }
+            foreach (var pb in orderedProductBatches)
+            {
+                foreach (var bl in pb)
+                    if (bl.workcenter == null)
+                    {
+                        sumSeconds += ScheduleBatchLink(workcenters, tasks, bl);
+                    }
+            }
+            return tasks.ToArray();
+        }
+        public static Task[] ScheduleTaskMinimizeMatTrans(BatchLink[] batchLinks, Workcenter[] workcenters, int forFirstLevelLimitSeconds, DateTime deadlineLimit, List<Task> tasks = null)
         {
             var matBatches = batchLinks.GroupBy(x => x.materialBatchId).Select(g => new MaterialBatch()
             {
@@ -102,7 +134,7 @@ namespace OptimalCutWork
 
             public override string ToString()
             {
-                return String.Format("{0} {1} {2}", workcenter.id, startSecond, batchLink.ToString());
+                return String.Format("{0} sec={1} {2}", workcenter.id, startSecond, batchLink.ToString());
             }
         }
 
@@ -110,6 +142,7 @@ namespace OptimalCutWork
         {
             public string id;
             public DateTime deadline;
+            public DateTime materialBatchIncomeAt;
             public int diameter;
             public int billetLength;
             public int availabilityLevel;
@@ -156,9 +189,12 @@ namespace OptimalCutWork
         {
             public ProductBatch productBatch;
             public string materialBatchId;
+            public DateTime materialBatchIncomeAt;
             public int placeId;
             public int quantity;
             public Workcenter workcenter;
+            //public int materialBatchLenmm;
+
             public override string ToString()
             {
                 return String.Format("{0}={1} {2}", productBatch.id, quantity, materialBatchId);
