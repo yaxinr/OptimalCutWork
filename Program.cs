@@ -41,10 +41,9 @@ namespace OptimalCutWork
             {
                 b.Key.materialBatchIncomeAt = b.Min(bl => bl.materialBatchIncomeAt);
             });
-            var orderedProductBatches = prodBatches
+            foreach (var pb in prodBatches.Where(x => x.Key.availabilityLevel == 1)
                 .OrderBy(x => x.Key.materialBatchIncomeAt)
-                .ThenBy(x => x.Key.deadline).ToArray();
-            foreach (var pb in orderedProductBatches.Where(x => x.Key.availabilityLevel == 1))
+                .ThenBy(x => x.Key.deadline).ToArray())
             {
                 foreach (var bl in pb.OrderBy(bl => bl.materialBatchIncomeAt))
                 {
@@ -52,7 +51,7 @@ namespace OptimalCutWork
                 }
                 if (sumSeconds > forFirstLevelLimitSeconds) break;
             }
-            foreach (var pb in orderedProductBatches)
+            foreach (var pb in prodBatches.OrderBy(x => x.Key.availabilityLevel == 1 ? x.Key.materialBatchIncomeAt : x.Key.deadline).ToArray())
             {
                 foreach (var bl in pb)
                     if (bl.workcenter == null)
