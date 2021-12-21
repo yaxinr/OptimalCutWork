@@ -32,7 +32,7 @@ namespace OptimalCutWork
             Console.ReadLine();
         }
 
-        public static Task[] ScheduleTask(BatchLink[] batchLinks, Workcenter[] workcenters, int forFirstLevelLimitSeconds, DateTime deadlineLimit, List<Task> tasks = null)
+        public static Task[] ScheduleTask(IEnumerable<BatchLink> batchLinks, IEnumerable<Workcenter> workcenters, int forFirstLevelLimitSeconds, DateTime deadlineLimit, List<Task> tasks = null)
         {
             if (tasks == null) tasks = new List<Task>();
             int sumSeconds = workcenters.Sum(w => w.seconds);
@@ -41,19 +41,21 @@ namespace OptimalCutWork
             {
                 b.Key.materialBatchIncomeAt = b.Min(bl => bl.materialBatchIncomeAt);
             });
+            var workcentersArr = workcenters.ToArray();
             foreach (var pb in prodBatches.Where(x => x.Key.availabilityLevel == 0)
                 .OrderBy(x => x.Key.deadline).ToArray())
                 foreach (var bl in pb)
-                    sumSeconds += ScheduleBatchLink(workcenters, tasks, bl);
+                    sumSeconds += ScheduleBatchLink(workcentersArr, tasks, bl);
             foreach (var pb in prodBatches.Where(x => x.Key.availabilityLevel == 1)
-                .OrderBy(x => x.Key.materialBatchIncomeAt)
+                .OrderBy(x => x.Key.deadline < DateTime.Now ? 0 : 1)
+                .ThenBy(x => x.Key.materialBatchIncomeAt)
                 .ThenBy(x => x.Key.deadline).ToArray())
                 foreach (var bl in pb.OrderBy(bl => bl.materialBatchIncomeAt))
-                    sumSeconds += ScheduleBatchLink(workcenters, tasks, bl);
+                    sumSeconds += ScheduleBatchLink(workcentersArr, tasks, bl);
             foreach (var pb in prodBatches.OrderBy(x => x.Key.deadline).ToArray())
                 foreach (var bl in pb)
                     if (bl.workcenter == null)
-                        sumSeconds += ScheduleBatchLink(workcenters, tasks, bl);
+                        sumSeconds += ScheduleBatchLink(workcentersArr, tasks, bl);
             return tasks.ToArray();
         }
         public static Task[] ScheduleTaskMinimizeMatTrans(BatchLink[] batchLinks, Workcenter[] workcenters, int forFirstLevelLimitSeconds, DateTime deadlineLimit, List<Task> tasks = null)
@@ -74,9 +76,7 @@ namespace OptimalCutWork
                 foreach (var bl in mb.batchLinks)
                 {
                     if (bl.productBatch.deadline < deadlineLimit && bl.productBatch.availabilityLevel == 1)
-                    {
                         sumSeconds += ScheduleBatchLink(workcenters, tasks, bl);
-                    }
                 }
                 if (sumSeconds > forFirstLevelLimitSeconds) break;
             }
@@ -102,9 +102,7 @@ namespace OptimalCutWork
                 availableWorkcenters = workcenters
                     .Where(w => w.minimalDiameter <= productBatch.diameter && w.maximalDiameter >= productBatch.diameter && productBatch.billetLength <= w.maximalLenght);
                 if (!availableWorkcenters.Any())
-                {
                     availableWorkcenters = workcenters;
-                }
             }
             foreach (Workcenter workcenter in availableWorkcenters.OrderBy(w => w.seconds))
             {
